@@ -1,0 +1,387 @@
+
+---
+title: "Full Annotated MOFA2 Multi-Omics Analysis of the CLL Cohort"
+author: "Prepared for Class Demo"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+# Introduction
+
+This R Markdown file is **fully annotated** for teaching purposes.  
+It walks through a complete MOFA2 analysis integrating **four omics layers** from  
+**200 Chronic Lymphocytic Leukemia (CLL) patients**.
+
+Each step includes **clear explanations**, **teaching notes**, and **context**.
+
+---
+
+# 1. Load Libraries
+
+The following packages are required for:
+
+- **MOFA2** → integration of multi-omics  
+- **data.table / tidyverse** → fast data handling  
+- **ggplot2** → visualization  
+- **survival** → optional survival analysis demos  
+
+```{r}
+# Load all required packages for the analysis.
+# Students should install these beforehand using install.packages() or BiocManager::install()
+library(data.table)
+library(tidyverse)
+library(MOFA2)
+library(randomForest)
+library(survival)
+library(survminer)
+library(ggplot2)
+```
+
+---
+
+# 2. Load Multi-Omics Data
+
+We load **four omics matrices**:
+
+- mRNA expression  
+- DNA methylation  
+- Drug response AUC values  
+- Somatic mutations  
+
+We also load **sample metadata**.
+
+```{r}
+# Load the preprocessed multi-omics list.
+# Each list element corresponds to one omics layer.
+CLL_data <- readRDS(url('https://usda-ree-ars.github.io/SEAStatsData/omics/CLL_data.rds'))
+
+# Load metadata with clinical covariates.
+CLL_metadata <- fread('https://usda-ree-ars.github.io/SEAStatsData/omics/sample_metadata.txt')
+
+# Show dimensions for teaching
+lapply(CLL_data, dim)
+
+# Preview metadata
+head(CLL_metadata)
+```
+
+---
+
+# 3. Explore Each Omics Layer
+
+These quick checks help students understand the structure and scale of the data.
+
+## mRNA Expression
+
+```{r}
+# Histogram of RNA expression values
+hist(CLL_data$mRNA,
+     main="mRNA Expression Distribution",
+     xlab="Expression Levels")
+```
+
+## DNA Methylation
+
+```{r}
+# Distribution of DNA methylation Beta values
+hist(CLL_data$Methylation,
+     main="DNA Methylation Distribution",
+     xlab="Beta Values")
+```
+
+## Drug Response (AUC)
+
+```{r}
+hist(CLL_data$Drugs,
+     main="Drug Response (AUC) Distribution",
+     xlab="AUC")
+```
+
+## Somatic Mutations
+
+```{r}
+# Show how many genes are mutated per patient
+mutation_counts <- rowSums(CLL_data$Mutations)
+
+```
+
+---
+
+# 4. Build and Train the MOFA2 Model
+
+This is the **core** step: integrating all omics layers.
+
+```{r}
+# Step 1: Create MOFA object from the omics list.
+MOFAobject <- create_mofa(CLL_data)
+
+# Step 2: Get default model options, then modify them.
+model_opts <- get_default_model_options(MOFAobject)
+
+# Mutations are binary → use Bernoulli likelihood
+model_opts$likelihoods["Mutations"] <- "bernoulli"
+
+# Number of latent factors
+model_opts$num_factors <- 15
+
+# Prepare model with updated settings
+MOFAobject <- prepare_mofa(MOFAobject, model_options = model_opts)
+
+# Step 3: Train MOFA model
+# use_basilisk=TRUE ensures the correct Python environment is used
+# uMOFAobject <- run_mofa(MOFAobject, use_basilisk = TRUE)
+MOFAobject <- readRDS(url("https://usda-ree-ars.github.io/SEAStatsData/omics/MOFA2_CLL.rds"))
+
+# Attach metadata to MOFA object
+samples_metadata(MOFAobject) <- CLL_metadata
+```
+
+---
+
+# 5. Load Feature Annotation Tables
+
+These help label features such as drugs and gene names.
+
+```{r}
+# Drug metadata: names and IDs
+drug_metadata <- fread(
+  'https://usda-ree-ars.github.io/SEAStatsData/omics/drugs.txt.gz'
+)
+
+# Gene metadata: biomart annotations
+gene_metadata <- fread(
+  'https://usda-ree-ars.github.io/SEAStatsData/omics/Hsapiens_genes_BioMart.87.txt.gz'
+)
+
+# (Instructor Note)
+# You can use these tables to rename rows in the MOFAobject
+# for more interpretable plots of factor weights.
+```
+
+---
+
+# 6. Variance Explained by Each Factor
+
+This plot helps students see which latent factors capture most of the signal.
+
+```{r}
+# Show proportion of variance explained by each factor,
+# broken down by omics layer.
+plot_variance_explained(MOFAobject, max_r2 = 10)
+```
+What insights from the data can we learn just from inspecting this plot?
+
+Factor 1 captures a source of variability that is present across almost all data modalities. Thus, its etiology is likely to be something very important for the disease.
+Factor 2 captures a strong source of variation that is exclusive to the drug response data.
+Factor 3 captures a strong source of variation that is exclusive to the mRNA data.
+Factor 4 and Factor 5 capture some co-variation between the mRNA and the drug response assay.
+(Q) Based on the MOFA output, if you were to profile just one molecular layer, which one would you choose to maximise the amount of sources of variation captured?
+---
+
+# 7. Associate Latent Factors with Clinical Covariates
+
+We test associations between MOFA factors and clinical traits:
+
+- sex  
+- age  
+- survival status  
+
+```{r}
+# Compare MOFA factors to metadata variables
+correlate_factors_with_covariates(
+  MOFAobject,
+  covariates = c("Gender", "age", "died"),
+  plot = "log_pval"   # useful for visual teaching
+)
+```
+
+---
+
+# 8. Inspect Factor 1 in Detail
+
+Factor 1 is often associated with major axes such as:
+
+- tumor burden  
+- mutational load  
+- proliferation patterns  
+
+---
+
+## 8.1 Factor 1 Values Across Patients
+
+```{r}
+# Visualize patient-level factor values.
+plot_factors(MOFAobject, factors = 1, dot_size = 2.5)
+```
+
+---
+
+## 8.2 Top Features Contributing to Factor 1
+
+This shows which **genes/mutations/drugs** drive the factor.
+
+
+
+```{r}
+# Plot top-weighted features in the "Mutations" view.
+plot_weights(MOFAobject, view = "Mutations", factor = 1,
+             nfeatures = 10, scale = TRUE)
+```
+
+
+Notice that most features lie at zero, indicating that most features
+have no association with Factor 1. There is however one gene that
+clearly stands out: IGHV (immunoglobulin heavy chain variable region).
+[This is the main clinical marker for
+CLL](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6355490/).
+
+An alternative visualisation to the full distribution of weights is to
+do a line plot that displays only the top features with the
+corresponding weight sign on the right:
+
+```{r}
+plot_top_weights(MOFAobject,
+ view = "Mutations",
+ factor = 1,
+ nfeatures = 10,     # Top number of features to highlight
+ scale = TRUE        # Scale weights from -1 to 1
+)
+```
+
+These weights tell us which features drive each factor. 
+
+
+IGHV has a positve weight. This means that samples with positive Factor
+1 values have the IGHV mutation whereas samples with negative Factor 1
+values do not have the IGHV mutation. To confirm this, let's plot the
+Factor values and colour the IGHV mutation status.
+
+
+
+```{r}
+plot_top_weights(MOFAobject,
+ view = "Mutations",
+ factor = 3,
+ nfeatures = 10,     # Top number of features to highlight
+ scale = TRUE        # Scale weights from -1 to 1
+)
+```
+
+
+# Inspection of combinations of Factors
+
+Now that we have characterised the etiology of the two main Factors, let's explore them together:
+```{r}
+
+# IGHV and trisomy 12 exists as clinical variables 
+
+#MOFAobject@samples_metadata$IGHV
+
+p <- plot_factors(MOFAobject, 
+  factors = c(1,3), 
+  color_by = "IGHV",
+  shape_by = "trisomy12",
+  dot_size = 2.5,
+  show_missing = TRUE
+)
+
+p <- p + 
+  geom_hline(yintercept=-1, linetype="dashed") +
+  geom_vline(xintercept=(-0.5), linetype="dashed")
+
+print(p)
+```
+
+1. Plot samples in the factor space to see how they relate to each other 
+2. Plotting samples often reveals biological subgroups
+
+This plot is extremely important. It classifies the patients into four different subgroups depending on their (multi-omic) molecular profile. As shown in the analysis above, both factors are associated with differences in the drug response assay they are strongly linked to somatic mutations (IGHV and trisomy12) that are easy to profile in clinical practice. This is fantastic for the aim of personalised medicine. 
+
+Multi omics profiles align clesely with clinical subtypes. 
+
+
+
+
+## Run enrichment analysis
+
+These are the steps for doing [Gene Set Enrichment Analysis (GSEA) with MOFA](https://raw.githack.com/bioFAM/MOFA2/tutorials_extended/GSEA.html):  
+
+- **(1) Define your gene set matrix**: this can be specified as a binary matrix where rows are gene sets and columns are genes. A value of 1 indicates that gene `j` belongs to pathway `i`. A value of 0 indicates elsewise.  
+- **(2) Select a gene set statistic**: the statistic used to quantify the scores at the pathway level. Must be one of the following: `mean.diff` (difference in the average weight between foreground and background genes) or `rank.sum` (difference in the sum of ranks between foreground and background genes).  
+- **(3) Select a statistical test**: the statistical test used to compute the significance of the gene set statistics under a competitive null hypothesis. Must be one of the following: `parametric` (a simple and very liberal parametric t-test), `cor.adj.parametric` (parametric t-test adjusted by the correlation between features), `permutation` (unparametric, the null distribution is created by permuting the weights. This option is computationally expensive, but it preserves the correlation structure between features in the data.).  
+
+An important consideration when running GSEA is that MOFA contains positive and negative weights. There will be cases where the genes with negative weights all belong to a specific pathway but genes with positive weights belong to other pathways. If this is true, doing GSEA with all of them together could dilute the signal. Hence, we recommend the user to do GSEA separately for (+) and (-) weights, and possibly also jointly with all weights.  
+
+Running GSEA with mRNA modality weights
+
+```{r message=FALSE}
+# GSEA on positive weights, with default options
+res.positive <- run_enrichment(MOFAobject, 
+  feature.sets = reactomeGS, 
+  view = "mRNA",
+  sign = "positive"
+)
+
+# GSEA on negative weights, with default options
+res.negative <- run_enrichment(MOFAobject, 
+  feature.sets = reactomeGS, 
+  view = "mRNA",
+  sign = "negative"
+)
+```
+
+The enrichment analysis returns a list of 5 elements:  
+
+- **feature.sets**:	the feature set matrix filtered by the genes that overlap with the MOFA model.  
+- **pval**:	the nominal p-values.  
+- **pval.adj**:	the FDR-adjusted p-values.  
+- **feature.statistics**: the feature statistics (i.e. the weights).  
+- **set.statistics**: matrices with the gene set statistics.  
+- **sigPathways**: list with significant pathways per factor at a specified FDR threshold  
+
+```{r}
+names(res.positive)
+```
+
+### Plot enrichment analysis results
+
+Plot an overview of the number of significant pathways per factor.  
+It seems that most of the Factors do not have clear gene set signatures. A clear exception is Factor 5, which has a very strong enrichment for genes with positive weights.
+```{r}
+plot_enrichment_heatmap(res.positive)
+plot_enrichment_heatmap(res.negative)
+```
+
+Let's plot the GSEA results for Factor 4. It seems that this Factor is capturing differences in the stress response of the blood cells.
+```{r}
+plot_enrichment(res.positive, factor = 4, max.pathways = 15)
+plot_enrichment(res.negative, factor = 4, max.pathways = 15)
+
+```
+Plotting the GSEA results for Factor 4 reveals that this Factor is capturing differences in the stress response of the blood cells. We have significantly enriched pathways such as cellular response to stress or heat shock response.
+
+
+
+It is always advised to not rely only on the p-values and to visualise which genes are driving the enrichment within each pathway. There are problematic cases where a single gene is driving the enrichment results in very small pathways.
+```{r}
+plot_enrichment_detailed(
+  enrichment.results = res.positive,
+  factor = 5, 
+  max.pathways = 3
+)
+```
+
+
+---
+
+# 9. Session Info
+
+Useful for reproducibility.
+
+```{r}
+sessionInfo()
+```
+
