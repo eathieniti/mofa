@@ -64,6 +64,8 @@ CLL_metadata <- fread('https://usda-ree-ars.github.io/SEAStatsData/omics/sample_
 # Show dimensions for teaching
 lapply(CLL_data, dim)
 
+
+head(CLL_data$mRNA,2)[,1:10]
 # Preview metadata
 head(CLL_metadata)
 ```
@@ -72,7 +74,7 @@ head(CLL_metadata)
 
 # 3. Explore Each Omics Layer
 
-These quick checks help students understand the structure and scale of the data.
+These quick checks helps understand the structure and scale of the data.
 
 ## mRNA Expression
 
@@ -165,7 +167,9 @@ gene_metadata <- fread(
 
 # 6. Variance Explained by Each Factor
 
-This plot helps students see which latent factors capture most of the signal.
+This plot helps see which latent factors capture most of the signal.
+
+Shows the proportion of variance explained by each factor across each modality and group
 
 ```{r}
 # Show proportion of variance explained by each factor,
@@ -254,7 +258,7 @@ plot_top_weights(MOFAobject,
 These weights tell us which features drive each factor. 
 
 
-IGHV has a positve weight. This means that samples with positive Factor
+IGHV has a positive weight. This means that samples with positive Factor
 1 values have the IGHV mutation whereas samples with negative Factor 1
 values do not have the IGHV mutation. To confirm this, let's plot the
 Factor values and colour the IGHV mutation status.
