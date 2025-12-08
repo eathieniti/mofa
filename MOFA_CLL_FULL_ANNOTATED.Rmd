@@ -270,6 +270,16 @@ plot_top_weights(MOFAobject,
 )
 ```
 
+```{r}
+MOFA2::plot_top_weights(MOFAobject,
+ view = "mRNA",
+ factor = 1,
+ nfeatures = 10,     # Top number of features to highlight
+ scale = TRUE,  
+ # Scale weights from -1 to 1
+)
+```
+
 
 # Inspection of combinations of Factors
 
@@ -300,7 +310,7 @@ print(p)
 
 This plot is extremely important. It classifies the patients into four different subgroups depending on their (multi-omic) molecular profile. As shown in the analysis above, both factors are associated with differences in the drug response assay they are strongly linked to somatic mutations (IGHV and trisomy12) that are easy to profile in clinical practice. This is fantastic for the aim of personalised medicine. 
 
-Multi omics profiles align clesely with clinical subtypes. 
+Multi omics profiles align closely with clinical subtypes. 
 
 
 
@@ -316,6 +326,19 @@ These are the steps for doing [Gene Set Enrichment Analysis (GSEA) with MOFA](ht
 An important consideration when running GSEA is that MOFA contains positive and negative weights. There will be cases where the genes with negative weights all belong to a specific pathway but genes with positive weights belong to other pathways. If this is true, doing GSEA with all of them together could dilute the signal. Hence, we recommend the user to do GSEA separately for (+) and (-) weights, and possibly also jointly with all weights.  
 
 Running GSEA with mRNA modality weights
+```{r message=FALSE}
+reactomeGS <- readRDS(url('https://usda-ree-ars.github.io/SEAStatsData/omics/reactomeGS.rds'))
+
+enrichment.results <- run_enrichment(
+  object = MOFAobject, 
+  view = "mRNA",
+  feature.sets = reactomeGS, 
+  set.statistic = "mean.diff",
+  statistical.test = "parametric"
+)
+
+```
+
 
 ```{r message=FALSE}
 # GSEA on positive weights, with default options
@@ -357,11 +380,11 @@ plot_enrichment_heatmap(res.negative)
 
 Let's plot the GSEA results for Factor 4. It seems that this Factor is capturing differences in the stress response of the blood cells.
 ```{r}
-plot_enrichment(res.positive, factor = 4, max.pathways = 15)
 plot_enrichment(res.negative, factor = 4, max.pathways = 15)
 
 ```
 Plotting the GSEA results for Factor 4 reveals that this Factor is capturing differences in the stress response of the blood cells. We have significantly enriched pathways such as cellular response to stress or heat shock response.
+Shows these processes are linked to drug response. 
 
 
 
